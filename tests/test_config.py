@@ -38,14 +38,14 @@ class TestCacmConfig:
     def test_defaults(self) -> None:
         """Default config has all expected values."""
         config = CacmConfig()
-        assert config.token_threshold == 180_000
+        assert config.token_threshold == 200_000
         assert config.polling_interval == 30
         assert config.warmdown_interval == 120
         assert config.grace_period == 300
         assert config.tmux_session == ""
         assert config.log_file == "~/.codex-active-context-management/cacm.log"
         assert config.compaction_enabled is True
-        assert config.compaction_threshold == 180_000
+        assert config.compaction_threshold == 200_000
         assert config.codex_sessions_dir == "~/.codex/sessions"
         assert config.codex_config_path == "~/.codex/config.toml"
         assert config.compact_prompt_file == "~/.codex/compact-prompts/active-context.md"

@@ -9,7 +9,7 @@ experimental_compact_prompt_file = "~/.codex/compact-prompts/active-context.md"
 
 # Optional: trigger automatic history compaction before the model's hard
 # default. Tune this per model/context window and your review tolerance.
-model_auto_compact_token_limit = 180000
+model_auto_compact_token_limit = 200000
 
 # Alternative for short experiments:
 # compact_prompt = "Summarize current work into durable state, preserving blockers, branches, commits, validation, and next actions."

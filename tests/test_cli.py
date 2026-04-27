@@ -313,7 +313,7 @@ class TestCmdConfig:
         assert result == 0
         captured = capsys.readouterr()
         assert "token_threshold" in captured.out
-        assert "180000" in captured.out
+        assert "200000" in captured.out
         assert "polling_interval" in captured.out
 
     def test_config_with_custom_file(

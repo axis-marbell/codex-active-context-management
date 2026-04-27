@@ -20,7 +20,7 @@ CACM is adapted from `finml-sage/active-context-protocol` for Codex CLI:
 
 ## Features
 
-- Token monitoring with configurable threshold, default `180000`
+- Token monitoring with configurable threshold, default `200000`
 - Compaction reminders with grace period, cooldown, and stacking prevention
 - Memory filing reminders for milestones such as PR merges, issue closures,
   commits, and PR creation
@@ -43,33 +43,85 @@ CACM is adapted from `finml-sage/active-context-protocol` for Codex CLI:
 PyYAML is optional. Without it, CACM uses the built-in minimal YAML parser for
 the default config shape.
 
-## Quick Start
+## Install
 
 ```bash
-pip install -e .
+git clone https://github.com/axis-marbell/codex-active-context-management.git
+cd codex-active-context-management
 
-cacm init
-# writes ~/.codex-active-context-management/config.yaml
-
-# Edit tmux_session to the tmux session where Codex is running.
-cacm config
-cacm start
-cacm status
-cacm stop
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/cacm --help
 ```
 
-To use the bundled Codex compaction prompt, copy or reference the prompt path in
-`~/.codex/config.toml`:
+The editable install keeps the prompt templates available from the cloned repo
+and installs the `cacm` command into `.venv/bin/`. If you prefer activating the
+virtual environment, run `source .venv/bin/activate` and use `cacm` directly.
+
+## Setup
+
+Create the CACM runtime config:
+
+```bash
+.venv/bin/cacm init
+# writes ~/.codex-active-context-management/config.yaml
+```
+
+Find the tmux session where Codex is running:
+
+```bash
+tmux list-sessions
+```
+
+Edit `~/.codex-active-context-management/config.yaml` and set
+`tmux_session` to that session name:
+
+```yaml
+tmux_session: "codex-0"
+token_threshold: 200000
+
+compaction:
+  enabled: true
+  threshold: 200000
+```
+
+Install the bundled compaction prompts where Codex can read them:
+
+```bash
+mkdir -p ~/.codex/compact-prompts
+cp codex/compact-prompts/*.md ~/.codex/compact-prompts/
+```
+
+Add the active-context prompt to `~/.codex/config.toml`:
 
 ```toml
 experimental_compact_prompt_file = "~/.codex/compact-prompts/active-context.md"
-model_auto_compact_token_limit = 180000
-
-# For short experiments only:
-# compact_prompt = "Summarize current work into durable state, preserving blockers, branches, commits, validation, and next actions."
+model_auto_compact_token_limit = 200000
 ```
 
-The repo includes a fuller example at `codex/config.toml.example`.
+The repo includes a fuller Codex config fragment at `codex/config.toml.example`.
+
+## Run
+
+Start the monitor in a terminal that can reach the target tmux server:
+
+```bash
+.venv/bin/cacm config
+.venv/bin/cacm start
+```
+
+Check status or stop it from another shell:
+
+```bash
+.venv/bin/cacm status
+.venv/bin/cacm stop
+```
+
+`cacm start` runs in the foreground. Use tmux, your service manager, or a
+supervised background process if you want it to stay running after the shell
+closes. The monitor writes its PID to
+`~/.codex-active-context-management/cacm.pid` and delivery logs to the configured
+`log_file`.
 
 ## Configuration
 
@@ -77,7 +129,7 @@ CACM reads from `~/.codex-active-context-management/config.yaml`. Run
 `cacm init` to generate the default:
 
 ```yaml
-token_threshold: 180000
+token_threshold: 200000
 polling_interval: 30
 
 warmdown_interval: 120
@@ -93,7 +145,7 @@ compact_prompt_file: "~/.codex/compact-prompts/active-context.md"
 
 compaction:
   enabled: true
-  threshold: 180000
+  threshold: 200000
   cooldown: 120
 
 memory_filing:
@@ -106,11 +158,10 @@ The only required delivery setting is `tmux_session`.
 
 ## Compaction Prompts
 
-CACM ships three prompt templates:
+CACM ships two prompt templates:
 
 - `codex/compact-prompts/active-context.md` for general Codex work
 - `codex/compact-prompts/pr-review-steward.md` for PR review and merge work
-- `codex/compact-prompts/swarm-agent.md` for swarm-driven work
 
 The prompts preserve operational state that often gets lost during compaction:
 current user corrections, repo and branch state, PR numbers, swarm message IDs,
@@ -151,7 +202,7 @@ Token monitoring uses the latest Codex token-count event:
         "input_tokens": 1234,
         "cached_input_tokens": 100000,
         "output_tokens": 500,
-        "total_tokens": 180500
+        "total_tokens": 200500
       }
     }
   }
@@ -166,7 +217,7 @@ fallback.
 Compaction reminder:
 
 ```text
-[CACM] Codex context at 180500 tokens (100% of 180000 threshold). Consider compacting with the configured Codex compaction prompt when ready.
+[CACM] Codex context at 200500 tokens (100% of 200000 threshold). Consider compacting with the configured Codex compaction prompt when ready.
 ```
 
 Memory filing reminder:
@@ -178,8 +229,9 @@ Memory filing reminder:
 ## Development
 
 ```bash
-pip install -e ".[test]"
-python3 -m pytest tests/ -v
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ".[test]"
+.venv/bin/python -m pytest tests/ -v
 ```
 
 The codebase keeps zero required runtime dependencies by design.

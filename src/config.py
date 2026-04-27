@@ -22,7 +22,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_PATH = Path("~/.codex-active-context-management/config.yaml")
-DEFAULT_TOKEN_THRESHOLD = 180_000
+DEFAULT_TOKEN_THRESHOLD = 200_000
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +294,7 @@ def _get_default_config_template() -> str:
 # https://github.com/axis-marbell/codex-active-context-management
 
 # Token monitoring — how often to check and when to alert
-token_threshold: 180000       # Total context tokens before compaction reminder
+token_threshold: 200000       # Total context tokens before compaction reminder
 polling_interval: 30          # Seconds between monitoring cycles
 
 # Delivery — how reminders reach the agent
@@ -314,7 +314,7 @@ compact_prompt_file: "~/.codex/compact-prompts/active-context.md"
 # Compaction trigger
 compaction:
   enabled: true               # Whether compaction reminders are active
-  threshold: 180000           # Token count that triggers compaction reminder
+  threshold: 200000           # Token count that triggers compaction reminder
   cooldown: 120               # Seconds between compaction reminders
 
 # Memory filing trigger

@@ -571,7 +571,7 @@ class TestThreshold:
 
     def test_default_threshold(self) -> None:
         monitor = TokenMonitor()
-        assert monitor.threshold == 180_000
+        assert monitor.threshold == 200_000
 
     def test_custom_threshold(self) -> None:
         monitor = TokenMonitor(threshold=120_000)

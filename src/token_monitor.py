@@ -138,7 +138,7 @@ class TokenMonitor:
 
     Usage::
 
-        monitor = TokenMonitor(threshold=180_000)
+        monitor = TokenMonitor(threshold=200_000)
         usage = monitor.read_latest_usage(Path("session.jsonl"))
         if usage and monitor.is_above_threshold(usage):
             print(f"Context at {usage.total_context} tokens — above threshold!")
@@ -148,7 +148,7 @@ class TokenMonitor:
             :meth:`is_above_threshold` returns True.  Default 180,000.
     """
 
-    def __init__(self, threshold: int = 180_000) -> None:
+    def __init__(self, threshold: int = 200_000) -> None:
         self._threshold = threshold
         self._last_position: int = 0
 

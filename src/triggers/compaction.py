@@ -56,7 +56,7 @@ class CompactionTrigger:
 
     def __init__(
         self,
-        threshold: int = 180_000,
+        threshold: int = 200_000,
         cooldown_seconds: int = 120,
         grace_period_seconds: int = 300,
     ) -> None:

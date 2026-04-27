@@ -383,7 +383,7 @@ class TestConstructorDefaults:
 
     def test_default_threshold(self) -> None:
         trigger = CompactionTrigger()
-        assert trigger.threshold == 180_000
+        assert trigger.threshold == 200_000
 
     def test_default_cooldown(self) -> None:
         trigger = CompactionTrigger()
