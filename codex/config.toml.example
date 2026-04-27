@@ -1,0 +1,15 @@
+# Codex config fragment for active context management.
+#
+# Add one of these to ~/.codex/config.toml, or place the prompt file path under
+# a profile if only some sessions should use active context compaction.
+
+# Use a file-backed prompt when the compaction contract is more than a short
+# sentence. This is the recommended shape.
+experimental_compact_prompt_file = "~/.codex/compact-prompts/active-context.md"
+
+# Optional: trigger automatic history compaction before the model's hard
+# default. Tune this per model/context window and your review tolerance.
+model_auto_compact_token_limit = 180000
+
+# Alternative for short experiments:
+# compact_prompt = "Summarize current work into durable state, preserving blockers, branches, commits, validation, and next actions."

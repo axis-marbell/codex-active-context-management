@@ -1,23 +1,28 @@
-# Active Context Protocol Configuration
-# https://github.com/finml-sage/active-context-protocol
+# Codex Active Context Management Configuration
+# https://github.com/axis-marbell/codex-active-context-management
 
 # Token monitoring — how often to check and when to alert
-token_threshold: 70000        # Total context tokens before compaction reminder
+token_threshold: 180000       # Total context tokens before compaction reminder
 polling_interval: 30          # Seconds between monitoring cycles
 
 # Delivery — how reminders reach the agent
 warmdown_interval: 120        # Minimum seconds between any two reminders (global)
 grace_period: 300             # Seconds after session start before any reminders fire
 tmux_session: ""              # Target tmux session name (required for delivery)
-log_file: "~/.acp/acp.log"   # Audit trail for all delivery attempts
+log_file: "~/.codex-active-context-management/cacm.log"
 
 # Idle detection
 idle_threshold: 5.0           # Seconds since last JSONL write to consider agent idle
 
+# Codex paths
+codex_sessions_dir: "~/.codex/sessions"
+codex_config_path: "~/.codex/config.toml"
+compact_prompt_file: "~/.codex/compact-prompts/active-context.md"
+
 # Compaction trigger
 compaction:
   enabled: true               # Whether compaction reminders are active
-  threshold: 70000            # Token count that triggers compaction reminder
+  threshold: 180000           # Token count that triggers compaction reminder
   cooldown: 120               # Seconds between compaction reminders
 
 # Memory filing trigger

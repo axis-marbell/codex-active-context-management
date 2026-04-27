@@ -38,6 +38,38 @@ def _make_assistant_entry(
     }
 
 
+def _make_codex_token_count_entry(
+    input_tokens: int = 1000,
+    cached_input_tokens: int = 50000,
+    output_tokens: int = 200,
+    total_tokens: int = 51200,
+    timestamp: str = "2026-04-27T10:00:00Z",
+) -> dict:
+    """Build a Codex event_msg token_count JSONL entry."""
+    return {
+        "timestamp": timestamp,
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "info": {
+                "total_token_usage": {
+                    "input_tokens": input_tokens,
+                    "cached_input_tokens": cached_input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                },
+                "last_token_usage": {
+                    "input_tokens": 500,
+                    "cached_input_tokens": 100,
+                    "output_tokens": 50,
+                    "total_tokens": 650,
+                },
+                "model_context_window": 258400,
+            },
+        },
+    }
+
+
 def _make_tool_entry() -> dict:
     """Build a tool_use JSONL entry (no usage data)."""
     return {"type": "tool_use", "content": "running command"}
@@ -125,6 +157,21 @@ class TestParseUsage:
         assert usage.cache_read_input_tokens == 97209
         assert usage.output_tokens == 317
         assert usage.total_context == 1 + 1205 + 97209
+
+    def test_valid_codex_token_count_entry(self) -> None:
+        entry = _make_codex_token_count_entry(
+            input_tokens=103544,
+            cached_input_tokens=72704,
+            output_tokens=1758,
+            total_tokens=105302,
+        )
+        usage = _parse_usage(entry)
+        assert usage is not None
+        assert usage.input_tokens == 103544
+        assert usage.cache_read_input_tokens == 72704
+        assert usage.output_tokens == 1758
+        assert usage.total_context == 105302
+        assert usage.timestamp == "2026-04-27T10:00:00Z"
 
     def test_non_assistant_type(self) -> None:
         entry = {"type": "tool_use", "message": {"usage": {"input_tokens": 5}}}
@@ -226,6 +273,18 @@ class TestReadLatestUsage:
         assert usage.cache_read_input_tokens == 97209
         assert usage.output_tokens == 317
         assert usage.total_context == 1 + 1205 + 97209
+
+    def test_single_codex_token_count_entry(self, tmp_path: Path) -> None:
+        """Parse a single Codex token_count event."""
+        path = tmp_path / "session.jsonl"
+        entry = _make_codex_token_count_entry(total_tokens=120_000)
+        _write_jsonl(path, [entry])
+
+        monitor = TokenMonitor()
+        usage = monitor.read_latest_usage(path)
+
+        assert usage is not None
+        assert usage.total_context == 120_000
 
     def test_latest_of_multiple_assistant_entries(self, tmp_path: Path) -> None:
         """Returns the LAST assistant entry, not the first."""
@@ -512,7 +571,7 @@ class TestThreshold:
 
     def test_default_threshold(self) -> None:
         monitor = TokenMonitor()
-        assert monitor.threshold == 70_000
+        assert monitor.threshold == 180_000
 
     def test_custom_threshold(self) -> None:
         monitor = TokenMonitor(threshold=120_000)
@@ -538,7 +597,7 @@ class TestThreshold:
 
 
 class TestFileTrackerIntegration:
-    """Integration tests using tmp_path to simulate a Claude Code session."""
+    """Integration tests using tmp_path to simulate a Codex CLI session."""
 
     def test_full_workflow_with_file_tracker(self, tmp_path: Path) -> None:
         """Simulate the full workflow: FileTracker finds file, TokenMonitor reads it."""
@@ -546,11 +605,11 @@ class TestFileTrackerIntegration:
 
         from src.file_tracker import FileTracker
 
-        # Set up a mock Claude projects directory
+        # Set up a mock Codex projects directory
         project_dir = tmp_path / "-home-user-myproject"
         project_dir.mkdir()
         session_id = str(uuid.uuid4())
-        jsonl_path = project_dir / f"{session_id}.jsonl"
+        jsonl_path = project_dir / f"rollout-test-{session_id}.jsonl"
 
         # Write initial JSONL content
         entries = [
@@ -567,10 +626,10 @@ class TestFileTrackerIntegration:
         _write_jsonl(jsonl_path, entries)
 
         # FileTracker finds the session
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         session = tracker.find_active_session()
         assert session is not None
-        assert session.session_id == session_id
+        assert session.session_id == f"rollout-test-{session_id}"
 
         # TokenMonitor reads from the tracked file
         monitor = TokenMonitor(threshold=70_000)
@@ -597,14 +656,14 @@ class TestFileTrackerIntegration:
         project_dir = tmp_path / "-home-user-project"
         project_dir.mkdir()
         session_id = str(uuid.uuid4())
-        jsonl_path = project_dir / f"{session_id}.jsonl"
+        jsonl_path = project_dir / f"rollout-test-{session_id}.jsonl"
 
         # First batch
         _write_jsonl(jsonl_path, [
             _make_assistant_entry(input_tokens=1, cache_read=10000),
         ])
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         session = tracker.find_active_session()
         assert session is not None
 

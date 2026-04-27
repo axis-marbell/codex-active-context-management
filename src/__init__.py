@@ -1,13 +1,13 @@
-"""Active Context Protocol — context management for Claude Code agents."""
+"""Codex Active Context Management."""
 
-from .config import AcpConfig, load_config, save_default_config
+from .config import CacmConfig, load_config, save_default_config
 from .delivery import DeliveryResult, DeliverySystem
 from .file_tracker import FileTracker, SessionInfo
 from .token_monitor import TokenMonitor, TokenUsage
 from .triggers import CompactionTrigger, MemoryFilingTrigger, MilestoneEvent, TriggerDecision
 
 __all__ = [
-    "AcpConfig",
+    "CacmConfig",
     "CompactionTrigger",
     "DeliveryResult",
     "DeliverySystem",

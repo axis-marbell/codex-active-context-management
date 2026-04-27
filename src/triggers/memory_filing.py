@@ -1,6 +1,6 @@
-"""Memory Filing Reminder Trigger for the Active Context Protocol.
+"""Memory Filing Reminder Trigger for Codex Active Context Management.
 
-Scans Claude Code session JSONL files for milestone events (PR merges, issue
+Scans Codex session JSONL files for milestone events (PR merges, issue
 closes, commits, PR creates) and reminds the agent to file learnings to
 institutional memory.
 
@@ -154,7 +154,7 @@ class MemoryFilingTrigger:
         and records them internally to support grace period suppression.
 
         Args:
-            jsonl_path: Path to the Claude Code session JSONL file.
+            jsonl_path: Path to the Codex CLI session JSONL file.
             from_position: Byte offset to start reading from.
 
         Returns:
@@ -498,7 +498,7 @@ class MemoryFilingTrigger:
             A human-readable reminder string suitable for delivery via tmux.
         """
         return (
-            "[ACP] Significant work detected. Consider filing to memory: "
+            "[CACM] Significant work detected. Consider filing to memory: "
             "takeaways, decisions, facts, or proverbs."
         )
 

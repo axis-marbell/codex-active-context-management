@@ -317,7 +317,7 @@ class TestFormatReminder:
         trigger = CompactionTrigger(threshold=70_000)
         msg = trigger.format_reminder(80_000)
 
-        assert "[ACP]" in msg
+        assert "[CACM]" in msg
         assert "80000" in msg
         assert "70000" in msg
         assert "114%" in msg  # 80000/70000 = ~114%
@@ -383,7 +383,7 @@ class TestConstructorDefaults:
 
     def test_default_threshold(self) -> None:
         trigger = CompactionTrigger()
-        assert trigger.threshold == 70_000
+        assert trigger.threshold == 180_000
 
     def test_default_cooldown(self) -> None:
         trigger = CompactionTrigger()

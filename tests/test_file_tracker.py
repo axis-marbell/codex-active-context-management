@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from src.file_tracker import FileTracker, SessionInfo, _is_valid_uuid
+from src.file_tracker import FileTracker, SessionInfo, _is_valid_session_file
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ def _make_session_file(
     """Create a fake session JSONL file and return its path.
 
     Args:
-        base: The claude_dir root.
+        base: The Codex sessions root.
         project: Project directory name.
         session_id: UUID string for filename; auto-generated if None.
         content: File content to write.
@@ -35,7 +35,7 @@ def _make_session_file(
     sid = session_id or str(uuid.uuid4())
     project_dir = base / project
     project_dir.mkdir(parents=True, exist_ok=True)
-    fpath = project_dir / f"{sid}.jsonl"
+    fpath = project_dir / f"rollout-test-{sid}.jsonl"
     fpath.write_text(content)
     if mtime_offset != 0.0:
         st = fpath.stat()
@@ -77,21 +77,21 @@ class TestSessionInfo:
 
 
 # ---------------------------------------------------------------------------
-# _is_valid_uuid helper
+# _is_valid_session_file helper
 # ---------------------------------------------------------------------------
 
-class TestIsValidUuid:
-    def test_valid_uuid4(self) -> None:
-        assert _is_valid_uuid(str(uuid.uuid4())) is True
+class TestIsValidSessionFile:
+    def test_valid_rollout_jsonl(self) -> None:
+        assert _is_valid_session_file(Path("rollout-test.jsonl")) is True
 
-    def test_valid_uuid_formatted(self) -> None:
-        assert _is_valid_uuid("550e8400-e29b-41d4-a716-446655440000") is True
+    def test_non_rollout_jsonl(self) -> None:
+        assert _is_valid_session_file(Path("session.jsonl")) is False
 
-    def test_invalid(self) -> None:
-        assert _is_valid_uuid("not-a-uuid") is False
+    def test_rollout_non_jsonl(self) -> None:
+        assert _is_valid_session_file(Path("rollout-test.txt")) is False
 
     def test_empty(self) -> None:
-        assert _is_valid_uuid("") is False
+        assert _is_valid_session_file(Path("")) is False
 
 
 # ---------------------------------------------------------------------------
@@ -102,25 +102,25 @@ class TestFindActiveSession:
     """Tests for FileTracker.find_active_session."""
 
     def test_no_directory(self, tmp_path: Path) -> None:
-        """claude_dir doesn't exist -> None."""
-        tracker = FileTracker(claude_dir=tmp_path / "nonexistent")
+        """codex_sessions_dir doesn't exist -> None."""
+        tracker = FileTracker(codex_sessions_dir=tmp_path / "nonexistent")
         assert tracker.find_active_session() is None
 
     def test_empty_directory(self, tmp_path: Path) -> None:
-        """claude_dir exists but has no JSONL files -> None."""
-        tracker = FileTracker(claude_dir=tmp_path)
+        """codex_sessions_dir exists but has no JSONL files -> None."""
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         assert tracker.find_active_session() is None
 
     def test_single_file(self, tmp_path: Path) -> None:
         """Single session file is returned."""
         sid = str(uuid.uuid4())
         fpath = _make_session_file(tmp_path, session_id=sid, content='{"type":"init"}\n')
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         info = tracker.find_active_session()
 
         assert info is not None
         assert info.file_path == fpath
-        assert info.session_id == sid
+        assert info.session_id == f"rollout-test-{sid}"
         assert info.project_path == "-home-user-myproject"
         assert info.size == len('{"type":"init"}\n')
         assert info.mtime > 0
@@ -130,7 +130,7 @@ class TestFindActiveSession:
         _make_session_file(tmp_path, project="proj-a", mtime_offset=-100)
         newest = _make_session_file(tmp_path, project="proj-b", mtime_offset=100)
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         info = tracker.find_active_session()
 
         assert info is not None
@@ -142,47 +142,47 @@ class TestFindActiveSession:
         _make_session_file(tmp_path, project="proj-2", mtime_offset=-25)
         newest = _make_session_file(tmp_path, project="proj-3", mtime_offset=50)
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         info = tracker.find_active_session()
 
         assert info is not None
         assert info.file_path == newest
         assert info.project_path == "proj-3"
 
-    def test_ignores_non_uuid_filenames(self, tmp_path: Path) -> None:
+    def test_ignores_non_rollout_filenames(self, tmp_path: Path) -> None:
         """Files whose stems are not valid UUIDs are ignored."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
-        (project_dir / "not-a-uuid.jsonl").write_text("{}\n")
+        (project_dir / "not-a-rollout.jsonl").write_text("{}\n")
         (project_dir / "random.jsonl").write_text("{}\n")
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         assert tracker.find_active_session() is None
 
-    def test_uuid_file_among_non_uuid(self, tmp_path: Path) -> None:
-        """A valid UUID file is found even when non-UUID files exist."""
+    def test_rollout_file_among_non_rollout(self, tmp_path: Path) -> None:
+        """A valid rollout file is found even when other JSONL files exist."""
         project_dir = tmp_path / "proj"
         project_dir.mkdir()
         (project_dir / "config.jsonl").write_text("{}\n")
         sid = str(uuid.uuid4())
-        expected = project_dir / f"{sid}.jsonl"
+        expected = project_dir / f"rollout-test-{sid}.jsonl"
         expected.write_text('{"hello":"world"}\n')
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         info = tracker.find_active_session()
 
         assert info is not None
-        assert info.session_id == sid
+        assert info.session_id == f"rollout-test-{sid}"
 
     def test_deeply_nested(self, tmp_path: Path) -> None:
         """Files in nested sub-directories are found (rglob)."""
         deep = tmp_path / "a" / "b" / "c"
         deep.mkdir(parents=True)
         sid = str(uuid.uuid4())
-        fpath = deep / f"{sid}.jsonl"
+        fpath = deep / f"rollout-test-{sid}.jsonl"
         fpath.write_text("{}\n")
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         info = tracker.find_active_session()
 
         assert info is not None
@@ -192,15 +192,15 @@ class TestFindActiveSession:
         """When the agent stops writing, the file is still returned."""
         _make_session_file(tmp_path, mtime_offset=-3600)  # 1 hour old
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         info = tracker.find_active_session()
 
         assert info is not None  # still found, even though old
 
-    def test_default_claude_dir(self) -> None:
-        """Default claude_dir points to ~/.claude/projects/."""
+    def test_default_codex_sessions_dir(self) -> None:
+        """Default codex_sessions_dir points to ~/.codex/sessions/."""
         tracker = FileTracker()
-        assert tracker.claude_dir == Path.home() / ".claude" / "projects"
+        assert tracker.codex_sessions_dir == Path.home() / ".codex" / "sessions"
 
 
 # ---------------------------------------------------------------------------
@@ -214,14 +214,14 @@ class TestCheckRotation:
         """First call with no prior session -> False."""
         _make_session_file(tmp_path)
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         assert tracker.check_rotation() is False
 
     def test_same_session_no_rotation(self, tmp_path: Path) -> None:
         """Same file active on consecutive calls -> False."""
         _make_session_file(tmp_path)
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         tracker.find_active_session()  # establish baseline
         assert tracker.check_rotation() is False
 
@@ -229,7 +229,7 @@ class TestCheckRotation:
         """New file appears with newer mtime -> rotation detected."""
         _make_session_file(tmp_path, session_id=str(uuid.uuid4()), mtime_offset=-10)
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         tracker.find_active_session()
 
         # Simulate new session appearing
@@ -241,7 +241,7 @@ class TestCheckRotation:
         """Rotation resets the read position to 0."""
         _make_session_file(tmp_path, session_id=str(uuid.uuid4()), mtime_offset=-10)
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         tracker.find_active_session()
         tracker.update_read_position(500)
         assert tracker.get_read_position() == 500
@@ -254,7 +254,7 @@ class TestCheckRotation:
 
     def test_no_files_no_rotation(self, tmp_path: Path) -> None:
         """Empty dir -> no rotation."""
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         assert tracker.check_rotation() is False
 
     def test_rotation_after_deletion_and_new_file(self, tmp_path: Path) -> None:
@@ -262,7 +262,7 @@ class TestCheckRotation:
         old_id = str(uuid.uuid4())
         old_path = _make_session_file(tmp_path, session_id=old_id, mtime_offset=-10)
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         tracker.find_active_session()
 
         # Delete old, create new
@@ -280,28 +280,28 @@ class TestReadPosition:
     """Tests for read position tracking."""
 
     def test_initial_position_is_zero(self, tmp_path: Path) -> None:
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         assert tracker.get_read_position() == 0
 
     def test_update_and_get(self, tmp_path: Path) -> None:
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         tracker.update_read_position(1024)
         assert tracker.get_read_position() == 1024
 
     def test_update_multiple_times(self, tmp_path: Path) -> None:
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         tracker.update_read_position(100)
         tracker.update_read_position(200)
         tracker.update_read_position(300)
         assert tracker.get_read_position() == 300
 
     def test_negative_position_raises(self, tmp_path: Path) -> None:
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         with pytest.raises(ValueError, match="must be >= 0"):
             tracker.update_read_position(-1)
 
     def test_zero_position_allowed(self, tmp_path: Path) -> None:
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         tracker.update_read_position(100)
         tracker.update_read_position(0)
         assert tracker.get_read_position() == 0
@@ -319,7 +319,7 @@ class TestFileDeletionDuringTracking:
         sid = str(uuid.uuid4())
         fpath = _make_session_file(tmp_path, session_id=sid)
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         info = tracker.find_active_session()
         assert info is not None
 
@@ -335,7 +335,7 @@ class TestFileDeletionDuringTracking:
         older = _make_session_file(tmp_path, project="p1", mtime_offset=-100)
         newer = _make_session_file(tmp_path, project="p2", mtime_offset=100)
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         info = tracker.find_active_session()
         assert info is not None
         assert info.file_path == newer
@@ -347,12 +347,12 @@ class TestFileDeletionDuringTracking:
         assert info2.file_path == older
 
     def test_directory_deleted(self, tmp_path: Path) -> None:
-        """Entire claude_dir deleted -> returns None."""
+        """Entire codex_sessions_dir deleted -> returns None."""
         import shutil
 
         _make_session_file(tmp_path, project="proj")
 
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
         info = tracker.find_active_session()
         assert info is not None
 
@@ -370,7 +370,7 @@ class TestIntegrationScenarios:
 
     def test_full_lifecycle(self, tmp_path: Path) -> None:
         """Simulate a full session lifecycle: start, read, rotate, read."""
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
 
         # No sessions yet
         assert tracker.find_active_session() is None
@@ -382,7 +382,7 @@ class TestIntegrationScenarios:
 
         info1 = tracker.find_active_session()
         assert info1 is not None
-        assert info1.session_id == s1_id
+        assert info1.session_id == f"rollout-test-{s1_id}"
 
         # Read some data
         tracker.update_read_position(19)
@@ -401,11 +401,11 @@ class TestIntegrationScenarios:
 
         info2 = tracker.find_active_session()
         assert info2 is not None
-        assert info2.session_id == s2_id
+        assert info2.session_id == f"rollout-test-{s2_id}"
 
     def test_multiple_projects_lifecycle(self, tmp_path: Path) -> None:
         """Sessions across different projects, tracker follows the most recent."""
-        tracker = FileTracker(claude_dir=tmp_path)
+        tracker = FileTracker(codex_sessions_dir=tmp_path)
 
         # Project A session
         _make_session_file(tmp_path, project="proj-a", mtime_offset=-50)

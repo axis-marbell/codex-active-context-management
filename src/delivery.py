@@ -1,4 +1,4 @@
-"""tmux Delivery System for the Active Context Protocol.
+"""tmux Delivery System for Codex Active Context Management.
 
 Delivers reminder messages to an agent's tmux session with idle detection,
 collision avoidance, and global warmdown enforcement.
@@ -125,7 +125,7 @@ class DeliverySystem:
         (erring on the side of NOT delivering).
 
         Args:
-            jsonl_path: Path to the Claude Code session JSONL file.
+            jsonl_path: Path to the Codex session JSONL file.
 
         Returns:
             True if the agent appears idle and safe to deliver to.

@@ -1,26 +1,25 @@
-"""JSONL Session File Tracker for Claude Code.
+"""JSONL Session File Tracker for Codex CLI.
 
-Finds and tracks the active Claude Code session JSONL file.
-Claude Code stores session data at ~/.claude/projects/<project-path>/<session-id>.jsonl.
-Each session gets a unique JSONL file named by UUID. When a new session starts,
-a new file appears. This tracker detects the active file and rotation.
+Finds and tracks the active Codex session JSONL file.
+Codex stores session data under ``~/.codex/sessions/<YYYY>/<MM>/<DD>/`` with
+``rollout-*.jsonl`` filenames. When a new session starts, a new file appears.
+This tracker detects the active file and rotation.
 """
 
 from __future__ import annotations
 
 import logging
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CLAUDE_DIR = Path.home() / ".claude" / "projects"
+_DEFAULT_CODEX_SESSIONS_DIR = Path.home() / ".codex" / "sessions"
 
 
 @dataclass(frozen=True)
 class SessionInfo:
-    """Metadata about a Claude Code session JSONL file.
+    """Metadata about a Codex session JSONL file.
 
     Attributes:
         file_path: Absolute path to the JSONL file.
@@ -37,13 +36,9 @@ class SessionInfo:
     mtime: float
 
 
-def _is_valid_uuid(value: str) -> bool:
-    """Check whether *value* is a valid UUID string."""
-    try:
-        uuid.UUID(value)
-        return True
-    except ValueError:
-        return False
+def _is_valid_session_file(path: Path) -> bool:
+    """Check whether *path* looks like a Codex session JSONL file."""
+    return path.suffix == ".jsonl" and path.name.startswith("rollout-")
 
 
 def _stat_session(path: Path) -> SessionInfo | None:
@@ -62,10 +57,10 @@ def _stat_session(path: Path) -> SessionInfo | None:
 
 
 class FileTracker:
-    """Tracks the active Claude Code session JSONL file.
+    """Tracks the active Codex session JSONL file.
 
-    The tracker scans ``claude_dir`` (defaults to ``~/.claude/projects/``)
-    for ``*.jsonl`` files whose stems are valid UUIDs.  The most recently
+    The tracker scans ``codex_sessions_dir`` (defaults to
+    ``~/.codex/sessions/``) for ``rollout-*.jsonl`` files. The most recently
     modified file is considered the *active* session.
 
     Usage::
@@ -80,14 +75,18 @@ class FileTracker:
     position so that consumers can resume incremental reads.
     """
 
-    def __init__(self, claude_dir: Path | None = None) -> None:
+    def __init__(self, codex_sessions_dir: Path | None = None) -> None:
         """Initialise the tracker.
 
         Args:
-            claude_dir: Root directory to scan.  Defaults to
-                ``~/.claude/projects/``.
+            codex_sessions_dir: Root directory to scan. Defaults to
+                ``~/.codex/sessions/``.
         """
-        self._claude_dir: Path = claude_dir if claude_dir is not None else _DEFAULT_CLAUDE_DIR
+        self._codex_sessions_dir: Path = (
+            codex_sessions_dir
+            if codex_sessions_dir is not None
+            else _DEFAULT_CODEX_SESSIONS_DIR
+        )
         self._current_session: SessionInfo | None = None
         self._read_position: int = 0
 
@@ -96,9 +95,9 @@ class FileTracker:
     # ------------------------------------------------------------------
 
     @property
-    def claude_dir(self) -> Path:
+    def codex_sessions_dir(self) -> Path:
         """The root directory being scanned."""
-        return self._claude_dir
+        return self._codex_sessions_dir
 
     # ------------------------------------------------------------------
     # Core API
@@ -107,18 +106,21 @@ class FileTracker:
     def find_active_session(self) -> SessionInfo | None:
         """Return the most recently modified session JSONL file.
 
-        Scans all ``*.jsonl`` files recursively under :pyattr:`claude_dir`
-        whose filenames (stems) are valid UUIDs.  Returns the one with the
-        highest modification time, or ``None`` if no qualifying files exist.
+        Scans all Codex ``rollout-*.jsonl`` files recursively under
+        :pyattr:`codex_sessions_dir`. Returns the one with the highest
+        modification time, or ``None`` if no qualifying files exist.
         """
-        if not self._claude_dir.is_dir():
-            logger.debug("claude_dir does not exist: %s", self._claude_dir)
+        if not self._codex_sessions_dir.is_dir():
+            logger.debug(
+                "codex_sessions_dir does not exist: %s",
+                self._codex_sessions_dir,
+            )
             return None
 
         best: SessionInfo | None = None
 
-        for path in self._claude_dir.rglob("*.jsonl"):
-            if not _is_valid_uuid(path.stem):
+        for path in self._codex_sessions_dir.rglob("*.jsonl"):
+            if not _is_valid_session_file(path):
                 continue
             info = _stat_session(path)
             if info is None:

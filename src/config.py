@@ -1,6 +1,7 @@
-"""Configuration for the Active Context Protocol.
+"""Configuration for Codex Active Context Management.
 
-Loads settings from a YAML config file (``~/.acp/config.yaml`` by default),
+Loads settings from a YAML config file
+(``~/.codex-active-context-management/config.yaml`` by default),
 falling back to sensible defaults when the file is missing or incomplete.
 Partial configs are merged with defaults so users only need to specify
 the values they want to override.
@@ -20,34 +21,38 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CONFIG_PATH = Path("~/.acp/config.yaml")
+_DEFAULT_CONFIG_PATH = Path("~/.codex-active-context-management/config.yaml")
+DEFAULT_TOKEN_THRESHOLD = 180_000
 
 
 # ---------------------------------------------------------------------------
-# AcpConfig dataclass
+# CacmConfig dataclass
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class AcpConfig:
-    """All ACP runtime settings.
+class CacmConfig:
+    """All CACM runtime settings.
 
     Every field has a sensible default so the system works out of the box.
     """
 
     # Token monitoring
-    token_threshold: int = 70_000
+    token_threshold: int = DEFAULT_TOKEN_THRESHOLD
     polling_interval: int = 30  # seconds
 
     # Delivery
     warmdown_interval: int = 120  # seconds between reminders (global)
     grace_period: int = 300  # seconds after session start before any reminders
     tmux_session: str = ""  # target tmux session name
-    log_file: str = "~/.acp/acp.log"
+    log_file: str = "~/.codex-active-context-management/cacm.log"
+    codex_sessions_dir: str = "~/.codex/sessions"
+    codex_config_path: str = "~/.codex/config.toml"
+    compact_prompt_file: str = "~/.codex/compact-prompts/active-context.md"
 
     # Triggers — compaction
     compaction_enabled: bool = True
-    compaction_threshold: int = 70_000
+    compaction_threshold: int = DEFAULT_TOKEN_THRESHOLD
     compaction_cooldown: int = 120
 
     # Triggers — memory filing
@@ -170,7 +175,7 @@ def _load_yaml(text: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Config flattening (nested YAML -> flat AcpConfig fields)
+# Config flattening (nested YAML -> flat CacmConfig fields)
 # ---------------------------------------------------------------------------
 
 
@@ -189,7 +194,7 @@ _NESTED_MAP: dict[str, dict[str, str]] = {
 
 
 def _flatten_config(raw: dict[str, Any]) -> dict[str, Any]:
-    """Flatten nested YAML sections into flat AcpConfig field names.
+    """Flatten nested YAML sections into flat CacmConfig field names.
 
     For example::
 
@@ -225,35 +230,35 @@ def _flatten_config(raw: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def load_config(path: Path | None = None) -> AcpConfig:
-    """Load ACP configuration from a YAML file.
+def load_config(path: Path | None = None) -> CacmConfig:
+    """Load CACM configuration from a YAML file.
 
     Args:
         path: Path to the YAML config file.  Defaults to
-            ``~/.acp/config.yaml``.  If the file does not exist,
-            returns the default configuration.
+            ``~/.codex-active-context-management/config.yaml``. If the
+            file does not exist, returns the default configuration.
 
     Returns:
-        An :class:`AcpConfig` instance with settings from the file merged
+        An :class:`CacmConfig` instance with settings from the file merged
         over the defaults.  Unknown keys are silently ignored.
     """
     config_path = (path or _DEFAULT_CONFIG_PATH).expanduser()
 
     if not config_path.is_file():
         logger.debug("Config file not found at %s — using defaults", config_path)
-        return AcpConfig()
+        return CacmConfig()
 
     try:
         text = config_path.read_text(encoding="utf-8")
     except OSError as exc:
         logger.warning("Failed to read config file %s: %s — using defaults", config_path, exc)
-        return AcpConfig()
+        return CacmConfig()
 
     raw = _load_yaml(text)
     flat = _flatten_config(raw)
 
     # Build config from defaults, overriding with file values
-    valid_fields = {f.name for f in fields(AcpConfig)}
+    valid_fields = {f.name for f in fields(CacmConfig)}
     kwargs: dict[str, Any] = {}
 
     for key, value in flat.items():
@@ -262,7 +267,7 @@ def load_config(path: Path | None = None) -> AcpConfig:
         else:
             logger.debug("Ignoring unknown config key: %s", key)
 
-    return AcpConfig(**kwargs)
+    return CacmConfig(**kwargs)
 
 
 def save_default_config(path: Path) -> None:
@@ -285,26 +290,31 @@ def save_default_config(path: Path) -> None:
 def _get_default_config_template() -> str:
     """Return the commented default config as a string."""
     return """\
-# Active Context Protocol Configuration
-# https://github.com/finml-sage/active-context-protocol
+# Codex Active Context Management Configuration
+# https://github.com/axis-marbell/codex-active-context-management
 
 # Token monitoring — how often to check and when to alert
-token_threshold: 70000        # Total context tokens before compaction reminder
+token_threshold: 180000       # Total context tokens before compaction reminder
 polling_interval: 30          # Seconds between monitoring cycles
 
 # Delivery — how reminders reach the agent
 warmdown_interval: 120        # Minimum seconds between any two reminders (global)
 grace_period: 300             # Seconds after session start before any reminders fire
 tmux_session: ""              # Target tmux session name (required for delivery)
-log_file: "~/.acp/acp.log"   # Audit trail for all delivery attempts
+log_file: "~/.codex-active-context-management/cacm.log"
 
 # Idle detection
 idle_threshold: 5.0           # Seconds since last JSONL write to consider agent idle
 
+# Codex paths
+codex_sessions_dir: "~/.codex/sessions"
+codex_config_path: "~/.codex/config.toml"
+compact_prompt_file: "~/.codex/compact-prompts/active-context.md"
+
 # Compaction trigger
 compaction:
   enabled: true               # Whether compaction reminders are active
-  threshold: 70000            # Token count that triggers compaction reminder
+  threshold: 180000           # Token count that triggers compaction reminder
   cooldown: 120               # Seconds between compaction reminders
 
 # Memory filing trigger

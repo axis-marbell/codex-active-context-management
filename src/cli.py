@@ -1,15 +1,15 @@
-"""CLI entry point for the Active Context Protocol.
+"""CLI entry point for Codex Active Context Management.
 
-Provides a simple ``acp`` command with subcommands for starting, stopping,
+Provides a simple ``cacm`` command with subcommands for starting, stopping,
 and inspecting the monitor.  Uses only ``argparse`` (no Click/Typer dependency).
 
 Commands::
 
-    acp start   — Start the monitor (enters main loop)
-    acp stop    — Stop a running monitor (sends SIGTERM)
-    acp status  — Show current status (PID, running?, config path)
-    acp config  — Show resolved configuration
-    acp init    — Create default config file at ~/.acp/config.yaml
+    cacm start   — Start the monitor (enters main loop)
+    cacm stop    — Stop a running monitor (sends SIGTERM)
+    cacm status  — Show current status (PID, running?, config path)
+    cacm config  — Show resolved configuration
+    cacm init    — Create default config file
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import time
 from dataclasses import fields
 from pathlib import Path
 
-from .config import AcpConfig, _DEFAULT_CONFIG_PATH, load_config, save_default_config
+from .config import CacmConfig, _DEFAULT_CONFIG_PATH, load_config, save_default_config
 from .delivery import DeliverySystem
 from .file_tracker import FileTracker
 from .token_monitor import TokenMonitor
@@ -32,7 +32,7 @@ from .triggers.memory_filing import MemoryFilingTrigger
 
 logger = logging.getLogger(__name__)
 
-_PID_FILE = Path("~/.acp/acp.pid")
+_PID_FILE = Path("~/.codex-active-context-management/cacm.pid")
 
 
 # ---------------------------------------------------------------------------
@@ -82,16 +82,16 @@ def _is_process_running(pid: int) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def run_monitor(config: AcpConfig) -> None:
-    """Run the ACP monitoring loop.
+def run_monitor(config: CacmConfig) -> None:
+    """Run the CACM monitoring loop.
 
     Sets up all components from the config, writes a PID file, installs
     signal handlers for clean shutdown, and enters the polling loop.
 
     Args:
-        config: Resolved ACP configuration.
+        config: Resolved CACM configuration.
     """
-    tracker = FileTracker()
+    tracker = FileTracker(codex_sessions_dir=Path(config.codex_sessions_dir).expanduser())
     token_monitor = TokenMonitor(threshold=config.token_threshold)
     delivery = DeliverySystem(
         tmux_session=config.tmux_session,
@@ -112,7 +112,7 @@ def run_monitor(config: AcpConfig) -> None:
 
     # PID file
     pid_path = _write_pid()
-    logger.info("ACP monitor started (PID %d, pid file %s)", os.getpid(), pid_path)
+    logger.info("CACM monitor started (PID %d, pid file %s)", os.getpid(), pid_path)
 
     # Signal handling for clean shutdown
     shutdown_requested = False
@@ -173,7 +173,7 @@ def run_monitor(config: AcpConfig) -> None:
         logger.info("KeyboardInterrupt — shutting down")
     finally:
         _remove_pid()
-        logger.info("ACP monitor stopped")
+        logger.info("CACM monitor stopped")
 
 
 # ---------------------------------------------------------------------------
@@ -182,17 +182,17 @@ def run_monitor(config: AcpConfig) -> None:
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    """Handle ``acp start``."""
+    """Handle ``cacm start``."""
     config_path = Path(args.config) if args.config else None
     config = load_config(config_path)
 
     # Check if already running
     existing_pid = _read_pid()
     if existing_pid is not None and _is_process_running(existing_pid):
-        print(f"ACP monitor already running (PID {existing_pid})")
+        print(f"CACM monitor already running (PID {existing_pid})")
         return 1
 
-    print("Starting ACP monitor...")
+    print("Starting CACM monitor...")
     if config.tmux_session:
         print(f"  tmux session: {config.tmux_session}")
     else:
@@ -205,10 +205,10 @@ def cmd_start(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    """Handle ``acp stop``."""
+    """Handle ``cacm stop``."""
     pid = _read_pid()
     if pid is None:
-        print("No PID file found — ACP monitor may not be running")
+        print("No PID file found — CACM monitor may not be running")
         return 1
 
     if not _is_process_running(pid):
@@ -218,25 +218,25 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
     try:
         os.kill(pid, signal.SIGTERM)
-        print(f"Sent SIGTERM to ACP monitor (PID {pid})")
+        print(f"Sent SIGTERM to CACM monitor (PID {pid})")
         _remove_pid()
         return 0
     except OSError as exc:
-        print(f"Failed to stop ACP monitor (PID {pid}): {exc}")
+        print(f"Failed to stop CACM monitor (PID {pid}): {exc}")
         return 1
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    """Handle ``acp status``."""
+    """Handle ``cacm status``."""
     config_path = (Path(args.config) if args.config else _DEFAULT_CONFIG_PATH).expanduser()
 
     pid = _read_pid()
     if pid is not None and _is_process_running(pid):
-        print(f"ACP monitor is running (PID {pid})")
+        print(f"CACM monitor is running (PID {pid})")
     elif pid is not None:
-        print(f"ACP monitor is NOT running (stale PID {pid})")
+        print(f"CACM monitor is NOT running (stale PID {pid})")
     else:
-        print("ACP monitor is not running")
+        print("CACM monitor is not running")
 
     print(f"Config: {config_path}")
     print(f"PID file: {_PID_FILE.expanduser()}")
@@ -244,11 +244,11 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_config(args: argparse.Namespace) -> int:
-    """Handle ``acp config``."""
+    """Handle ``cacm config``."""
     config_path = Path(args.config) if args.config else None
     config = load_config(config_path)
 
-    print("Resolved ACP configuration:")
+    print("Resolved CACM configuration:")
     print("-" * 40)
     for f in fields(config):
         value = getattr(config, f.name)
@@ -257,7 +257,7 @@ def cmd_config(args: argparse.Namespace) -> int:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """Handle ``acp init``."""
+    """Handle ``cacm init``."""
     config_path = (Path(args.config) if args.config else _DEFAULT_CONFIG_PATH).expanduser()
 
     if config_path.is_file() and not args.force:
@@ -278,26 +278,26 @@ def cmd_init(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
-        prog="acp",
-        description="Active Context Protocol — context management for Claude Code agents",
+        prog="cacm",
+        description="Codex Active Context Management",
     )
     parser.add_argument(
         "--config",
         "-c",
         default=None,
-        help="Path to config file (default: ~/.acp/config.yaml)",
+        help="Path to config file (default: ~/.codex-active-context-management/config.yaml)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # start
-    subparsers.add_parser("start", help="Start the ACP monitor")
+    subparsers.add_parser("start", help="Start the CACM monitor")
 
     # stop
-    subparsers.add_parser("stop", help="Stop a running ACP monitor")
+    subparsers.add_parser("stop", help="Stop a running CACM monitor")
 
     # status
-    subparsers.add_parser("status", help="Show ACP monitor status")
+    subparsers.add_parser("status", help="Show CACM monitor status")
 
     # config
     subparsers.add_parser("config", help="Show resolved configuration")

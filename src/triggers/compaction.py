@@ -1,10 +1,12 @@
-"""Compaction Reminder Trigger for the Active Context Protocol.
+"""Compaction Reminder Trigger for Codex Active Context Management.
 
 Evaluates whether a compaction reminder should be sent to the agent based on
 current context token usage, session age, and cooldown/stacking constraints.
 
-This trigger produces *reminders*, not automatic ``/compact`` commands.
-The agent retains full control over when to act.
+This trigger produces *reminders*, not automatic compaction commands. The
+agent retains full control over when to act. Codex users can wire the actual
+compaction behavior through ``compact_prompt`` or
+``experimental_compact_prompt_file`` in ``~/.codex/config.toml``.
 """
 
 from __future__ import annotations
@@ -54,7 +56,7 @@ class CompactionTrigger:
 
     def __init__(
         self,
-        threshold: int = 70_000,
+        threshold: int = 180_000,
         cooldown_seconds: int = 120,
         grace_period_seconds: int = 300,
     ) -> None:
@@ -200,7 +202,8 @@ class CompactionTrigger:
         """
         pct = int(round(total_context_tokens / self.threshold * 100))
         return (
-            f"[ACP] Context at {total_context_tokens} tokens "
+            f"[CACM] Codex context at {total_context_tokens} tokens "
             f"({pct}% of {self.threshold} threshold). "
-            f"Consider compacting when ready."
+            f"Consider compacting with the configured Codex compaction prompt "
+            f"when ready."
         )

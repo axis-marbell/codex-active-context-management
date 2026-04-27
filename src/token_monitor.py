@@ -1,17 +1,15 @@
-"""Token Usage Monitor for Claude Code JSONL sessions.
+"""Token Usage Monitor for Codex JSONL sessions.
 
-Reads token usage data from Claude Code session JSONL files. Each ``assistant``
-type entry contains a ``message.usage`` block with per-call token counts.
-These counts are NOT cumulative -- each entry reports the full context window
-usage for that API call. The monitor finds the latest assistant entry's usage
-and computes total context consumption.
+Reads token usage data from Codex session JSONL files. Modern Codex logs token
+usage as ``event_msg`` entries whose payload type is ``token_count``. Older
+Codex-style ``assistant`` entries with ``message.usage`` are still parsed as a
+compatibility fallback.
 
 Formula::
 
-    total_context = input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+    total_context = total_token_usage.total_tokens
 
-This value grows monotonically over the session, so reading the latest entry
-is sufficient to determine current context usage.
+The monitor finds the latest token-count entry and uses its reported total.
 """
 
 from __future__ import annotations
@@ -49,6 +47,54 @@ class TokenUsage:
 
 def _parse_usage(entry: dict) -> TokenUsage | None:
     """Extract a TokenUsage from a parsed JSONL entry, or None if missing."""
+    codex_usage = _parse_codex_token_count(entry)
+    if codex_usage is not None:
+        return codex_usage
+
+    return _parse_legacy_assistant_usage(entry)
+
+
+def _parse_codex_token_count(entry: dict) -> TokenUsage | None:
+    """Extract token usage from a Codex ``event_msg`` token-count entry."""
+    if entry.get("type") != "event_msg":
+        return None
+
+    payload = entry.get("payload")
+    if not isinstance(payload, dict) or payload.get("type") != "token_count":
+        return None
+
+    info = payload.get("info")
+    if not isinstance(info, dict):
+        return None
+
+    total_usage = info.get("total_token_usage")
+    if not isinstance(total_usage, dict):
+        return None
+
+    try:
+        input_tokens = int(total_usage.get("input_tokens", 0))
+        cache_read = int(total_usage.get("cached_input_tokens", 0))
+        output_tokens = int(total_usage.get("output_tokens", 0))
+        total_context = int(total_usage.get("total_tokens", 0))
+    except (TypeError, ValueError):
+        return None
+
+    timestamp = entry.get("timestamp", "")
+    if not isinstance(timestamp, str):
+        timestamp = str(timestamp)
+
+    return TokenUsage(
+        input_tokens=input_tokens,
+        cache_creation_input_tokens=0,
+        cache_read_input_tokens=cache_read,
+        output_tokens=output_tokens,
+        total_context=total_context,
+        timestamp=timestamp,
+    )
+
+
+def _parse_legacy_assistant_usage(entry: dict) -> TokenUsage | None:
+    """Extract token usage from older assistant/message usage entries."""
     if entry.get("type") != "assistant":
         return None
 
@@ -84,25 +130,25 @@ def _parse_usage(entry: dict) -> TokenUsage | None:
 
 
 class TokenMonitor:
-    """Monitors token usage from Claude Code session JSONL files.
+    """Monitors token usage from Codex session JSONL files.
 
     Reads JSONL files incrementally (from a given byte position), finds the
-    latest ``assistant`` entry with ``message.usage`` data, and reports
-    whether the context window has exceeded a configurable threshold.
+    latest token-count entry, and reports whether the context window has
+    exceeded a configurable threshold.
 
     Usage::
 
-        monitor = TokenMonitor(threshold=70_000)
+        monitor = TokenMonitor(threshold=180_000)
         usage = monitor.read_latest_usage(Path("session.jsonl"))
         if usage and monitor.is_above_threshold(usage):
             print(f"Context at {usage.total_context} tokens — above threshold!")
 
     Args:
         threshold: Context token count above which
-            :meth:`is_above_threshold` returns True.  Default 70,000.
+            :meth:`is_above_threshold` returns True.  Default 180,000.
     """
 
-    def __init__(self, threshold: int = 70_000) -> None:
+    def __init__(self, threshold: int = 180_000) -> None:
         self._threshold = threshold
         self._last_position: int = 0
 
@@ -125,7 +171,7 @@ class TokenMonitor:
         Malformed lines are silently skipped with a debug log message.
 
         Args:
-            jsonl_path: Path to the Claude Code session JSONL file.
+            jsonl_path: Path to the Codex session JSONL file.
             from_position: Byte offset to start reading from.  Use 0 to
                 read the entire file, or pass the value from
                 :meth:`get_new_position` for incremental reads.

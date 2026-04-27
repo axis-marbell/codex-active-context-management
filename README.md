@@ -1,185 +1,188 @@
-# Active Context Protocol
+# Codex Active Context Management
 
-External context management for Claude Code agents.
+External context monitoring and compaction prompts for Codex CLI agents.
 
-## What is ACP?
+## What CACM Does
 
-Claude Code agents have no awareness of their own context window size. They work until the window fills, and by that point it's too late for clean compaction -- the agent is already losing coherence or hitting limits mid-task.
+Codex Active Context Management watches Codex session JSONL from outside the
+agent process and sends tmux reminders when context gets large or important
+workflow milestones appear. It does not compact automatically and it does not
+replace Codex config. It gives the agent timely, sourced state so the agent can
+choose the right moment to compact, file memory, or keep working.
 
-ACP is an external monitor that solves this. It watches the agent's JSONL session log from outside, reads token usage from each API call entry, and delivers reminder messages via tmux when thresholds are crossed. It also detects work milestones (PR merges, issue closures, commits) and reminds the agent to file learnings to institutional memory.
+CACM is adapted from `finml-sage/active-context-protocol` for Codex CLI:
 
-The key design principle: **ACP sends a reminder, not an auto-trigger.** The agent decides when and how to act. ACP just makes sure the agent has the information it needs to make that decision.
+- monitors Codex session logs under `~/.codex/sessions`
+- reads Codex `event_msg` entries where `payload.type == "token_count"`
+- uses `payload.info.total_token_usage.total_tokens` as current context usage
+- delivers reminders through tmux using the existing two-call send-keys pattern
+- ships file-backed Codex compaction prompts under `codex/compact-prompts/`
 
 ## Features
 
-- **Token monitoring** with configurable threshold (default 70,000 tokens)
-- **Compaction reminders** with grace period, cooldown, and stacking prevention
-- **Memory filing reminders** -- detects PR merges, issue closures, commits, and PR creates via pattern matching on tool results and tool calls
-- **Two delivery modes**: `reminder` (default, delivers anytime) and `command` (requires idle detection -- for future `/compact`-style delivery)
-- **tmux delivery** using the proven two-call `send-keys` pattern (text first, Enter separately)
-- **Warmdown enforcement** -- global rate limit prevents reminder spam
-- **Session tracking** -- auto-detects the active JSONL session file, handles rotation
-- **Incremental reads** -- seeks from last position, never re-reads the full log
-- **YAML configuration** with zero-dependency fallback parser (PyYAML optional)
-- **Full CLI**: `start`, `stop`, `status`, `config`, `init`
-- **Audit trail** logging for all delivery attempts (delivered, queued, skipped, failed)
-- **PID file management** for clean start/stop lifecycle
+- Token monitoring with configurable threshold, default `180000`
+- Compaction reminders with grace period, cooldown, and stacking prevention
+- Memory filing reminders for milestones such as PR merges, issue closures,
+  commits, and PR creation
+- tmux delivery for reminders into the active Codex session
+- Session tracking for `rollout-*.jsonl` files under `~/.codex/sessions`
+- Incremental JSONL reads from the last known byte position
+- YAML configuration with a zero-dependency fallback parser
+- CLI commands: `cacm init`, `cacm start`, `cacm status`, `cacm config`,
+  `cacm stop`
+- Codex `config.toml` example for `experimental_compact_prompt_file`,
+  `compact_prompt`, and `model_auto_compact_token_limit`
 
 ## Requirements
 
 - Python 3.11+
-- tmux (for delivery)
-- Claude Code (the agent being monitored)
-- No external Python dependencies (PyYAML is optional for config parsing)
+- tmux for reminder delivery
+- Codex CLI
+- No required runtime Python dependencies
+
+PyYAML is optional. Without it, CACM uses the built-in minimal YAML parser for
+the default config shape.
 
 ## Quick Start
 
 ```bash
-# Install
 pip install -e .
-# or: pipx install -e .
 
-# Create default config
-acp init
-# -> writes ~/.acp/config.yaml
+cacm init
+# writes ~/.codex-active-context-management/config.yaml
 
-# Edit config: set tmux_session to your Claude Code session name
-# e.g., tmux_session: "claude-0"
-
-# Start the monitor
-acp start
-
-# Check if it's running
-acp status
-
-# View resolved config
-acp config
-
-# Stop when done
-acp stop
+# Edit tmux_session to the tmux session where Codex is running.
+cacm config
+cacm start
+cacm status
+cacm stop
 ```
+
+To use the bundled Codex compaction prompt, copy or reference the prompt path in
+`~/.codex/config.toml`:
+
+```toml
+experimental_compact_prompt_file = "~/.codex/compact-prompts/active-context.md"
+model_auto_compact_token_limit = 180000
+
+# For short experiments only:
+# compact_prompt = "Summarize current work into durable state, preserving blockers, branches, commits, validation, and next actions."
+```
+
+The repo includes a fuller example at `codex/config.toml.example`.
 
 ## Configuration
 
-ACP reads from `~/.acp/config.yaml`. Run `acp init` to generate the default:
+CACM reads from `~/.codex-active-context-management/config.yaml`. Run
+`cacm init` to generate the default:
 
 ```yaml
-# Token monitoring -- how often to check and when to alert
-token_threshold: 70000        # Total context tokens before compaction reminder
-polling_interval: 30          # Seconds between monitoring cycles
+token_threshold: 180000
+polling_interval: 30
 
-# Delivery -- how reminders reach the agent
-warmdown_interval: 120        # Minimum seconds between any two reminders (global)
-grace_period: 300             # Seconds after session start before any reminders fire
-tmux_session: ""              # Target tmux session name (REQUIRED for delivery)
-log_file: "~/.acp/acp.log"   # Audit trail for all delivery attempts
+warmdown_interval: 120
+grace_period: 300
+tmux_session: ""
+log_file: "~/.codex-active-context-management/cacm.log"
 
-# Idle detection
-idle_threshold: 5.0           # Seconds since last JSONL write to consider agent idle
+idle_threshold: 5.0
 
-# Compaction trigger
+codex_sessions_dir: "~/.codex/sessions"
+codex_config_path: "~/.codex/config.toml"
+compact_prompt_file: "~/.codex/compact-prompts/active-context.md"
+
 compaction:
-  enabled: true               # Whether compaction reminders are active
-  threshold: 70000            # Token count that triggers compaction reminder
-  cooldown: 120               # Seconds between compaction reminders
+  enabled: true
+  threshold: 180000
+  cooldown: 120
 
-# Memory filing trigger
 memory_filing:
-  enabled: true               # Whether memory filing reminders are active
-  grace_after_event: 60       # Seconds to wait after milestone before reminding
-  patterns: []                # Additional regex patterns for milestone detection
+  enabled: true
+  grace_after_event: 60
+  patterns: []
 ```
 
-The only required change is `tmux_session` -- set it to the name of the tmux session where Claude Code is running. Everything else has sensible defaults.
+The only required delivery setting is `tmux_session`.
 
-If PyYAML is not installed, ACP uses a built-in minimal YAML parser that handles the flat key-value format above. No external dependencies required.
+## Compaction Prompts
+
+CACM ships three prompt templates:
+
+- `codex/compact-prompts/active-context.md` for general Codex work
+- `codex/compact-prompts/pr-review-steward.md` for PR review and merge work
+- `codex/compact-prompts/swarm-agent.md` for swarm-driven work
+
+The prompts preserve operational state that often gets lost during compaction:
+current user corrections, repo and branch state, PR numbers, swarm message IDs,
+commands run, validation status, memory paths, next action, and concrete tool
+usage examples such as working CLI flags or config keys. This is intentional:
+after compaction, the next Codex turn should not need to rediscover basic tool
+usage that was already learned in the session.
 
 ## Architecture
 
-```
-Claude Code Agent (tmux session)
-    |  writes
+```text
+Codex CLI agent in tmux
+    |
+    | writes
     v
-JSONL Session Log (~/.claude/projects/<project-path>/<session-id>.jsonl)
-    ^  reads (incremental, seek-from-last-position)
+~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+    ^
+    | incremental read
     |
-ACP Monitor (polling loop, configurable interval)
+CACM monitor
     |
-    +-- FileTracker ---------> finds active session JSONL, detects rotation
-    +-- TokenMonitor --------> reads token usage from assistant entries
-    +-- CompactionTrigger ---> threshold / grace / cooldown / stacking checks
-    +-- MemoryFilingTrigger -> pattern-matches milestones in tool results & calls
-    +-- DeliverySystem ------> sends reminder via tmux send-keys (two-call pattern)
+    +-- FileTracker ---------> finds latest rollout JSONL and detects rotation
+    +-- TokenMonitor --------> reads event_msg/token_count entries
+    +-- CompactionTrigger ---> threshold, grace, cooldown, pending checks
+    +-- MemoryFilingTrigger -> detects milestone patterns
+    +-- DeliverySystem ------> sends reminders through tmux
 ```
 
-**How it reads tokens**: Each `assistant` entry in the JSONL contains a `message.usage` block with `input_tokens`, `cache_creation_input_tokens`, and `cache_read_input_tokens`. ACP sums these for total context. This value grows monotonically, so only the latest entry matters.
+Token monitoring uses the latest Codex token-count event:
 
-**How it delivers**: ACP sends text to the tmux session via `tmux send-keys`. Two separate subprocess calls are required -- one for the message text, one for Enter -- because a single call silently drops the Enter keystroke. In `reminder` mode (default), delivery happens regardless of agent activity. In `command` mode, ACP waits for the agent to be idle (no recent JSONL writes, last entry is an `assistant` type without `tool_use` blocks).
+```json
+{
+  "type": "event_msg",
+  "payload": {
+    "type": "token_count",
+    "info": {
+      "total_token_usage": {
+        "input_tokens": 1234,
+        "cached_input_tokens": 100000,
+        "output_tokens": 500,
+        "total_tokens": 180500
+      }
+    }
+  }
+}
+```
 
-**How it prevents spam**: Four layers of protection:
-1. **Grace period** -- no reminders during the first N seconds of a session
-2. **Cooldown** -- minimum time between consecutive reminders from the same trigger
-3. **Stacking prevention** -- won't re-fire if a reminder is pending and cooldown hasn't expired
-4. **Warmdown** -- global rate limit across all triggers
+Legacy assistant `message.usage` entries are still parsed as a compatibility
+fallback.
 
 ## What the Agent Sees
 
-When ACP delivers a compaction reminder:
+Compaction reminder:
 
-```
-[ACP] Context at 85000 tokens (121% of 70000 threshold). Consider compacting when ready.
-```
-
-When ACP delivers a memory filing reminder:
-
-```
-[ACP] Significant work detected. Consider filing to memory: takeaways, decisions, facts, or proverbs.
+```text
+[CACM] Codex context at 180500 tokens (100% of 180000 threshold). Consider compacting with the configured Codex compaction prompt when ready.
 ```
 
-These arrive as text input in the tmux session. The agent processes them on its next turn.
+Memory filing reminder:
 
-## Use Cases
-
-### Shipped
-
-**Compaction reminders** -- Get nudged when context grows large. The agent can compact immediately, finish its current task first, or ignore it. ACP will re-remind after the cooldown expires.
-
-**Memory filing reminders** -- After milestones (PR merged, issue closed, commit pushed), ACP waits a grace period for the agent to file memory unprompted. If it doesn't, ACP sends a nudge. If the agent does file memory within the grace window, the reminder is suppressed.
-
-### Coming Soon
-
-**Code word triggers** -- Agents embed code words in their workflow output (e.g., `[ACP:CHECKPOINT]`, `[ACP:REVIEW]`). The monitor detects these patterns in the JSONL and fires custom reminders. This lets agents schedule their own reminders without clock access.
-
-**Task scheduling** -- Agent writes a structured entry like `[ACP:REMIND 5m "check test results"]` and the monitor delivers the reminder after the specified delay. Enables time-aware workflows for agents that cannot track wall-clock time.
-
-**Custom trigger plugins** -- User-defined trigger classes loaded from config. Pattern match on any JSONL content -- tool outputs, error patterns, specific file changes.
-
-**Multi-agent monitoring** -- Single ACP instance monitors multiple tmux sessions. Cross-agent awareness: "Agent A just compacted, remind Agent B to check shared state."
-
-**Escalation chains** -- If a reminder is ignored N times, escalate: change wording, increase urgency, or notify a different channel.
-
-**Metrics and dashboards** -- Track compaction frequency, context growth rate, reminder effectiveness over time. Export to JSON for visualization.
+```text
+[CACM] Significant work detected. Consider filing to memory: takeaways, decisions, facts, or proverbs.
+```
 
 ## Development
 
 ```bash
-# Install with test dependencies
 pip install -e ".[test]"
-
-# Run tests
 python3 -m pytest tests/ -v
-
-# 347 tests covering all modules:
-#   test_cli.py            -- CLI commands, PID management, monitor loop
-#   test_config.py         -- YAML loading, fallback parser, defaults
-#   test_delivery.py       -- tmux delivery, idle detection, warmdown, audit trail
-#   test_file_tracker.py   -- session discovery, rotation detection
-#   test_token_monitor.py  -- token parsing, incremental reads, thresholds
-#   test_compaction.py     -- trigger logic, grace/cooldown/stacking
-#   test_memory_filing.py  -- milestone detection, pattern matching, lifecycle
 ```
 
-PRs welcome. The codebase has zero external runtime dependencies by design -- keep it that way.
+The codebase keeps zero required runtime dependencies by design.
 
 ## License
 

@@ -1,4 +1,4 @@
-"""Tests for the ACP configuration module."""
+"""Tests for the CACM configuration module."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from src.config import (
-    AcpConfig,
+    CacmConfig,
     _coerce_value,
     _flatten_config,
     _parse_yaml_minimal,
@@ -30,22 +30,25 @@ def tmp_config(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# AcpConfig dataclass tests
+# CacmConfig dataclass tests
 # ---------------------------------------------------------------------------
 
 
-class TestAcpConfig:
+class TestCacmConfig:
     def test_defaults(self) -> None:
         """Default config has all expected values."""
-        config = AcpConfig()
-        assert config.token_threshold == 70_000
+        config = CacmConfig()
+        assert config.token_threshold == 180_000
         assert config.polling_interval == 30
         assert config.warmdown_interval == 120
         assert config.grace_period == 300
         assert config.tmux_session == ""
-        assert config.log_file == "~/.acp/acp.log"
+        assert config.log_file == "~/.codex-active-context-management/cacm.log"
         assert config.compaction_enabled is True
-        assert config.compaction_threshold == 70_000
+        assert config.compaction_threshold == 180_000
+        assert config.codex_sessions_dir == "~/.codex/sessions"
+        assert config.codex_config_path == "~/.codex/config.toml"
+        assert config.compact_prompt_file == "~/.codex/compact-prompts/active-context.md"
         assert config.compaction_cooldown == 120
         assert config.memory_filing_enabled is True
         assert config.memory_filing_grace_after_event == 60
@@ -54,7 +57,7 @@ class TestAcpConfig:
 
     def test_custom_values(self) -> None:
         """Config accepts custom values."""
-        config = AcpConfig(
+        config = CacmConfig(
             token_threshold=100_000,
             tmux_session="kelvin",
             memory_filing_patterns=["deploy", "release"],
@@ -64,9 +67,9 @@ class TestAcpConfig:
         assert config.memory_filing_patterns == ["deploy", "release"]
 
     def test_default_patterns_independent_per_instance(self) -> None:
-        """Each AcpConfig gets its own list (no mutable default sharing)."""
-        c1 = AcpConfig()
-        c2 = AcpConfig()
+        """Each CacmConfig gets its own list (no mutable default sharing)."""
+        c1 = CacmConfig()
+        c2 = CacmConfig()
         c1.memory_filing_patterns.append("test")
         assert c2.memory_filing_patterns == []
 
@@ -367,12 +370,12 @@ class TestLoadConfig:
         """Missing config file returns defaults."""
         missing = tmp_path / "nonexistent.yaml"
         config = load_config(missing)
-        assert config == AcpConfig()
+        assert config == CacmConfig()
 
     def test_load_no_file_arg_returns_defaults(self) -> None:
         """Passing None uses the default path, which typically does not exist in tests."""
         config = load_config(None)
-        assert isinstance(config, AcpConfig)
+        assert isinstance(config, CacmConfig)
 
     def test_partial_config_merges_with_defaults(self, tmp_config: Path) -> None:
         """Partial config overrides only specified fields."""
@@ -395,15 +398,15 @@ class TestLoadConfig:
         assert not hasattr(config, "unknown_key")
 
     def test_load_default_path_when_none(self) -> None:
-        """Passing None uses the default path (~/.acp/config.yaml)."""
+        """Passing None uses the default path (~/.codex-active-context-management/config.yaml)."""
         config = load_config(None)
-        assert isinstance(config, AcpConfig)
+        assert isinstance(config, CacmConfig)
 
     def test_expanduser_on_paths(self, tmp_config: Path) -> None:
         """Path expansion works on log_file."""
-        tmp_config.write_text('log_file: "~/.acp/test.log"\n')
+        tmp_config.write_text('log_file: "~/.codex-active-context-management/test.log"\n')
         config = load_config(tmp_config)
-        assert config.log_file == "~/.acp/test.log"
+        assert config.log_file == "~/.codex-active-context-management/test.log"
 
     def test_load_unreadable_file_returns_defaults(
         self, tmp_config: Path, caplog: pytest.LogCaptureFixture
@@ -415,7 +418,7 @@ class TestLoadConfig:
             caplog.at_level(logging.WARNING, logger="src.config"),
         ):
             config = load_config(tmp_config)
-        assert config == AcpConfig()
+        assert config == CacmConfig()
         assert any("Failed to read config file" in msg for msg in caplog.messages)
 
     def test_load_with_nested_yaml_sections(self, tmp_config: Path) -> None:
@@ -475,7 +478,7 @@ class TestSaveDefaultConfig:
         """The saved default config can be loaded back and matches defaults."""
         save_default_config(tmp_config)
         config = load_config(tmp_config)
-        default = AcpConfig()
+        default = CacmConfig()
 
         assert config.token_threshold == default.token_threshold
         assert config.polling_interval == default.polling_interval
@@ -492,7 +495,7 @@ class TestSaveDefaultConfig:
         """The saved default config includes explanatory comments."""
         save_default_config(tmp_config)
         text = tmp_config.read_text()
-        assert "# Active Context Protocol" in text
+        assert "# Codex Active Context Management" in text
         assert "# Token monitoring" in text
         assert "# Compaction trigger" in text
 
@@ -500,11 +503,11 @@ class TestSaveDefaultConfig:
         """Full roundtrip: save -> load -> compare every field."""
         save_default_config(tmp_config)
         loaded = load_config(tmp_config)
-        default = AcpConfig()
+        default = CacmConfig()
 
         from dataclasses import fields as dc_fields
 
-        for f in dc_fields(AcpConfig):
+        for f in dc_fields(CacmConfig):
             assert getattr(loaded, f.name) == getattr(default, f.name), (
                 f"Field {f.name!r} mismatch: loaded={getattr(loaded, f.name)!r}, "
                 f"default={getattr(default, f.name)!r}"
@@ -554,8 +557,12 @@ class TestLoadYamlFallback:
 
     def test_pyyaml_returns_non_dict_becomes_empty(self) -> None:
         """If PyYAML's safe_load returns a non-dict (e.g. string), return {}."""
+        import types
+
         from src.config import _load_yaml
 
-        with patch("yaml.safe_load", return_value="just a string"):
+        fake_yaml = types.SimpleNamespace(safe_load=lambda _text: "just a string")
+
+        with patch.dict("sys.modules", {"yaml": fake_yaml}):
             result = _load_yaml("just a string")
         assert result == {}

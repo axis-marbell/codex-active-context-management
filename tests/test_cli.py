@@ -1,4 +1,4 @@
-"""Tests for the ACP CLI module."""
+"""Tests for the CACM CLI module."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from src.cli import (
     main,
     run_monitor,
 )
-from src.config import AcpConfig, _DEFAULT_CONFIG_PATH
+from src.config import CacmConfig, _DEFAULT_CONFIG_PATH
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ from src.config import AcpConfig, _DEFAULT_CONFIG_PATH
 @pytest.fixture
 def tmp_pid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect PID file to a temp directory."""
-    pid_path = tmp_path / "acp.pid"
+    pid_path = tmp_path / "cacm.pid"
     monkeypatch.setattr("src.cli._PID_FILE", pid_path)
     return pid_path
 
@@ -155,7 +155,7 @@ class TestPidFile:
         _remove_pid()  # Should not raise
 
     def test_write_pid_creates_parent_dirs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        pid_path = tmp_path / "deep" / "nested" / "acp.pid"
+        pid_path = tmp_path / "deep" / "nested" / "cacm.pid"
         monkeypatch.setattr("src.cli._PID_FILE", pid_path)
         _write_pid(99999)
         assert pid_path.is_file()
@@ -193,7 +193,7 @@ class TestPidFile:
 
 class TestCmdInit:
     def test_init_creates_config(self, tmp_config: Path) -> None:
-        """acp init creates the config file."""
+        """cacm init creates the config file."""
         parser = build_parser()
         args = parser.parse_args(["--config", str(tmp_config), "init"])
         result = cmd_init(args)
@@ -201,7 +201,7 @@ class TestCmdInit:
         assert tmp_config.is_file()
 
     def test_init_refuses_overwrite(self, tmp_config: Path) -> None:
-        """acp init refuses to overwrite existing config without --force."""
+        """cacm init refuses to overwrite existing config without --force."""
         tmp_config.write_text("existing content")
         parser = build_parser()
         args = parser.parse_args(["--config", str(tmp_config), "init"])
@@ -210,16 +210,16 @@ class TestCmdInit:
         assert tmp_config.read_text() == "existing content"
 
     def test_init_force_overwrite(self, tmp_config: Path) -> None:
-        """acp init --force overwrites existing config."""
+        """cacm init --force overwrites existing config."""
         tmp_config.write_text("existing content")
         parser = build_parser()
         args = parser.parse_args(["--config", str(tmp_config), "init", "--force"])
         result = cmd_init(args)
         assert result == 0
-        assert "Active Context Protocol" in tmp_config.read_text()
+        assert "Codex Active Context Management" in tmp_config.read_text()
 
     def test_init_prints_path(self, tmp_config: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """acp init prints the path of the created file."""
+        """cacm init prints the path of the created file."""
         parser = build_parser()
         args = parser.parse_args(["--config", str(tmp_config), "init"])
         cmd_init(args)
@@ -247,7 +247,7 @@ class TestCmdStatus:
     def test_status_when_not_running(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp status when no monitor is running."""
+        """cacm status when no monitor is running."""
         parser = build_parser()
         args = parser.parse_args(["status"])
         result = cmd_status(args)
@@ -258,7 +258,7 @@ class TestCmdStatus:
     def test_status_when_running(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp status when a monitor PID exists and is alive."""
+        """cacm status when a monitor PID exists and is alive."""
         _write_pid(os.getpid())  # Use our own PID (it's running)
         parser = build_parser()
         args = parser.parse_args(["status"])
@@ -270,7 +270,7 @@ class TestCmdStatus:
     def test_status_with_stale_pid(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp status when PID file exists but process is dead."""
+        """cacm status when PID file exists but process is dead."""
         _write_pid(999999999)  # Non-existent PID
         parser = build_parser()
         args = parser.parse_args(["status"])
@@ -281,7 +281,7 @@ class TestCmdStatus:
     def test_status_shows_config_path(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp status output includes the config path."""
+        """cacm status output includes the config path."""
         parser = build_parser()
         args = parser.parse_args(["status"])
         cmd_status(args)
@@ -291,7 +291,7 @@ class TestCmdStatus:
     def test_status_shows_pid_file_path(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp status output includes the PID file path."""
+        """cacm status output includes the PID file path."""
         parser = build_parser()
         args = parser.parse_args(["status"])
         cmd_status(args)
@@ -306,20 +306,20 @@ class TestCmdStatus:
 
 class TestCmdConfig:
     def test_config_shows_defaults(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """acp config displays all resolved settings."""
+        """cacm config displays all resolved settings."""
         parser = build_parser()
         args = parser.parse_args(["config"])
         result = cmd_config(args)
         assert result == 0
         captured = capsys.readouterr()
         assert "token_threshold" in captured.out
-        assert "70000" in captured.out
+        assert "180000" in captured.out
         assert "polling_interval" in captured.out
 
     def test_config_with_custom_file(
         self, tmp_config: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp config with a custom config file."""
+        """cacm config with a custom config file."""
         tmp_config.write_text("token_threshold: 99999\n")
         parser = build_parser()
         args = parser.parse_args(["--config", str(tmp_config), "config"])
@@ -328,23 +328,23 @@ class TestCmdConfig:
         assert "99999" in captured.out
 
     def test_config_prints_all_fields(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """acp config output includes every field name from AcpConfig."""
+        """cacm config output includes every field name from CacmConfig."""
         from dataclasses import fields as dc_fields
 
         parser = build_parser()
         args = parser.parse_args(["config"])
         cmd_config(args)
         captured = capsys.readouterr()
-        for f in dc_fields(AcpConfig):
+        for f in dc_fields(CacmConfig):
             assert f.name in captured.out, f"Missing field {f.name} in config output"
 
     def test_config_prints_header(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """acp config output has a header line."""
+        """cacm config output has a header line."""
         parser = build_parser()
         args = parser.parse_args(["config"])
         cmd_config(args)
         captured = capsys.readouterr()
-        assert "Resolved ACP configuration" in captured.out
+        assert "Resolved CACM configuration" in captured.out
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +356,7 @@ class TestCmdStop:
     def test_stop_no_pid_file(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp stop when no PID file exists."""
+        """cacm stop when no PID file exists."""
         result = cmd_stop(build_parser().parse_args(["stop"]))
         assert result == 1
         captured = capsys.readouterr()
@@ -365,7 +365,7 @@ class TestCmdStop:
     def test_stop_stale_pid(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp stop when PID exists but process is dead."""
+        """cacm stop when PID exists but process is dead."""
         _write_pid(999999999)
         result = cmd_stop(build_parser().parse_args(["stop"]))
         assert result == 1
@@ -377,7 +377,7 @@ class TestCmdStop:
     def test_stop_running_pid_sends_sigterm(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp stop sends SIGTERM to a running process and cleans up PID file."""
+        """cacm stop sends SIGTERM to a running process and cleans up PID file."""
         _write_pid(54321)
         with (
             patch("src.cli._is_process_running", return_value=True),
@@ -393,7 +393,7 @@ class TestCmdStop:
     def test_stop_os_error_on_kill(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp stop returns 1 if os.kill raises OSError."""
+        """cacm stop returns 1 if os.kill raises OSError."""
         _write_pid(54321)
         with (
             patch("src.cli._is_process_running", return_value=True),
@@ -414,7 +414,7 @@ class TestCmdStart:
     def test_start_refuses_if_already_running(
         self, tmp_pid: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp start when a monitor is already running."""
+        """cacm start when a monitor is already running."""
         _write_pid(os.getpid())  # Our PID is running
         parser = build_parser()
         args = parser.parse_args(["start"])
@@ -426,7 +426,7 @@ class TestCmdStart:
     def test_start_with_no_tmux_session_warns(
         self, tmp_pid: Path, tmp_config: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp start with no tmux_session configured prints a warning."""
+        """cacm start with no tmux_session configured prints a warning."""
         tmp_config.write_text("tmux_session: \"\"\n")
         parser = build_parser()
         args = parser.parse_args(["--config", str(tmp_config), "start"])
@@ -439,7 +439,7 @@ class TestCmdStart:
     def test_start_with_tmux_session_shows_session(
         self, tmp_pid: Path, tmp_config: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """acp start with tmux_session configured prints the session name."""
+        """cacm start with tmux_session configured prints the session name."""
         tmp_config.write_text("tmux_session: my-session\n")
         parser = build_parser()
         args = parser.parse_args(["--config", str(tmp_config), "start"])
@@ -458,7 +458,7 @@ class TestCmdStart:
 class TestRunMonitor:
     def test_polling_cycle_no_session(self, tmp_pid: Path) -> None:
         """Monitor loop handles no active session gracefully."""
-        config = AcpConfig(polling_interval=1, tmux_session="test")
+        config = CacmConfig(polling_interval=1, tmux_session="test")
 
         with (
             patch("src.cli.FileTracker") as MockTracker,
@@ -489,7 +489,7 @@ class TestRunMonitor:
 
     def test_polling_cycle_with_session(self, tmp_pid: Path) -> None:
         """Monitor loop processes an active session."""
-        config = AcpConfig(
+        config = CacmConfig(
             polling_interval=1,
             tmux_session="test",
             compaction_enabled=True,
@@ -521,7 +521,7 @@ class TestRunMonitor:
 
             compaction = MockCompaction.return_value
             compaction.should_fire.return_value = True
-            compaction.format_reminder.return_value = "[ACP] Compaction reminder"
+            compaction.format_reminder.return_value = "[CACM] Compaction reminder"
 
             delivery = MockDelivery.return_value
             delivery.is_idle.return_value = True
@@ -549,13 +549,13 @@ class TestRunMonitor:
             token_mon.read_latest_usage.assert_called()
             compaction.should_fire.assert_called()
             delivery.deliver.assert_called_once_with(
-                "[ACP] Compaction reminder", "compaction", mode="reminder"
+                "[CACM] Compaction reminder", "compaction", mode="reminder"
             )
             compaction.record_reminder_sent.assert_called_once()
 
     def test_session_rotation_resets_state(self, tmp_pid: Path) -> None:
         """Session rotation resets session start time and compaction state."""
-        config = AcpConfig(
+        config = CacmConfig(
             polling_interval=1,
             tmux_session="test",
             compaction_enabled=False,
@@ -595,7 +595,7 @@ class TestRunMonitor:
 
     def test_memory_filing_trigger(self, tmp_pid: Path) -> None:
         """Monitor fires memory filing reminder when milestone detected."""
-        config = AcpConfig(
+        config = CacmConfig(
             polling_interval=1,
             tmux_session="test",
             compaction_enabled=False,
@@ -628,7 +628,7 @@ class TestRunMonitor:
             memory.scan_for_milestones.return_value = [MagicMock()]
             memory.get_new_position.return_value = 100
             memory.evaluate.return_value = mock_decision
-            memory.format_reminder.return_value = "[ACP] Memory filing reminder"
+            memory.format_reminder.return_value = "[CACM] Memory filing reminder"
 
             call_count = 0
 
@@ -643,13 +643,13 @@ class TestRunMonitor:
             run_monitor(config)
 
             delivery.deliver.assert_called_once_with(
-                "[ACP] Memory filing reminder", "memory_filing", mode="reminder"
+                "[CACM] Memory filing reminder", "memory_filing", mode="reminder"
             )
             memory.record_reminder_sent.assert_called_once()
 
     def test_signal_handler_stops_loop(self, tmp_pid: Path) -> None:
         """SIGTERM handler sets shutdown flag to exit the loop."""
-        config = AcpConfig(polling_interval=1, tmux_session="test")
+        config = CacmConfig(polling_interval=1, tmux_session="test")
 
         with (
             patch("src.cli.FileTracker") as MockTracker,
@@ -685,7 +685,7 @@ class TestRunMonitor:
 
     def test_pid_file_cleanup_on_exit(self, tmp_pid: Path) -> None:
         """PID file is removed when the monitor exits."""
-        config = AcpConfig(polling_interval=1, tmux_session="test")
+        config = CacmConfig(polling_interval=1, tmux_session="test")
 
         with (
             patch("src.cli.FileTracker") as MockTracker,
@@ -704,7 +704,7 @@ class TestRunMonitor:
 
     def test_compaction_skipped_when_disabled(self, tmp_pid: Path) -> None:
         """When compaction_enabled is False, token monitor is not consulted."""
-        config = AcpConfig(
+        config = CacmConfig(
             polling_interval=1,
             tmux_session="test",
             compaction_enabled=False,
@@ -736,7 +736,7 @@ class TestRunMonitor:
 
     def test_memory_filing_skipped_when_disabled(self, tmp_pid: Path) -> None:
         """When memory_filing_enabled is False, memory trigger is not consulted."""
-        config = AcpConfig(
+        config = CacmConfig(
             polling_interval=1,
             tmux_session="test",
             compaction_enabled=False,
@@ -773,7 +773,7 @@ class TestRunMonitor:
         reminder delivery.  Idle detection is only enforced in command
         mode (inside DeliverySystem.deliver), not by the monitor loop.
         """
-        config = AcpConfig(
+        config = CacmConfig(
             polling_interval=1,
             tmux_session="test",
             compaction_enabled=True,
@@ -805,7 +805,7 @@ class TestRunMonitor:
 
             compaction = MockCompaction.return_value
             compaction.should_fire.return_value = True
-            compaction.format_reminder.return_value = "[ACP] Compaction reminder"
+            compaction.format_reminder.return_value = "[CACM] Compaction reminder"
 
             delivery = MockDelivery.return_value
             # is_idle would return False, but the monitor loop no longer checks it
@@ -818,7 +818,7 @@ class TestRunMonitor:
             # Key assertion: deliver IS called (with mode="reminder"),
             # even though is_idle() would return False
             delivery.deliver.assert_called_once_with(
-                "[ACP] Compaction reminder", "compaction", mode="reminder"
+                "[CACM] Compaction reminder", "compaction", mode="reminder"
             )
             # is_idle should NOT have been called by the monitor loop
             delivery.is_idle.assert_not_called()
@@ -839,7 +839,7 @@ class TestMain:
         """No command shows usage text in stdout."""
         main([])
         captured = capsys.readouterr()
-        assert "usage:" in captured.out.lower() or "acp" in captured.out.lower()
+        assert "usage:" in captured.out.lower() or "cacm" in captured.out.lower()
 
     def test_unknown_command(self) -> None:
         """Unknown command triggers argparse error."""

@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "active-context-protocol"
+name = "codex-active-context-management"
 version = "0.1.0"
-description = "Active context management and action protocol for Claude Code agents"
+description = "Active context management and compaction reminders for Codex CLI agents"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 
 [project.scripts]
-acp = "src.cli:main"
+cacm = "src.cli:main"
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]

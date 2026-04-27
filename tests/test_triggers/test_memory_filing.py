@@ -536,7 +536,7 @@ class TestFormatReminder:
         trigger = MemoryFilingTrigger()
         msg = trigger.format_reminder()
 
-        assert "[ACP]" in msg
+        assert "[CACM]" in msg
         assert "memory" in msg.lower()
         assert "filing" in msg.lower() or "file" in msg.lower() or "consider" in msg.lower()
 
